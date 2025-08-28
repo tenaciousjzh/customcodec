@@ -101,7 +101,7 @@ package main
 
 import (
     "fmt"
-    "github.com/yourusername/customcodec/pkg/zerocopycodec"
+    "github.com/tenaciousjzh/customcodec/pkg/zerocopycodec"
 )
 
 func main() {
