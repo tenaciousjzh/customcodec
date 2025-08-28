@@ -1,12 +1,17 @@
 package zerocopycodec
 
 import (
+	//Used to ensure consistent endianness across platforms
 	"encoding/binary"
 	"fmt"
+
+	//used for zero-copy string conversion
 	"unsafe"
 )
 
-// Data represents our recursive data structure
+// Data represents our recursive data structure.
+// Using an interface slice to allow nesting of int32, string, and other Data slices.
+// Using interface{} her for flexibility and allows for more ValueTypes in the future if needed.
 type Data []interface{}
 
 // ValueType represents the type of a value in our format
@@ -49,34 +54,38 @@ func (e *Encoder) Encode(data Data) []byte {
 
 	// Write total length at the beginning
 	totalLen := len(e.buf) - 4
+	// Using LittleEndian to ensure consistent cross-platform representation
 	binary.LittleEndian.PutUint32(e.buf[0:4], uint32(totalLen))
 
 	return e.buf
 }
 
+// Encodes a value in the Encoder's buffer; appending to the end
+// of the buffer. It's called recursively for nested structures
+// and modifies the buffer in place.
 func (e *Encoder) encodeValue(value interface{}) {
 	switch v := value.(type) {
 	case int32:
-		e.buf = append(e.buf, byte(TypeInt32))
-		e.buf = binary.LittleEndian.AppendUint32(e.buf, uint32(v))
+		e.buf = append(e.buf, byte(TypeInt32))                     //Just a single byte so order doesn't matter
+		e.buf = binary.LittleEndian.AppendUint32(e.buf, uint32(v)) //4 bytes, always little-endian
 
 	case string:
-		e.buf = append(e.buf, byte(TypeString))
+		e.buf = append(e.buf, byte(TypeString)) //As above, single byte is fine
 		strBytes := []byte(v)
-		e.buf = binary.LittleEndian.AppendUint32(e.buf, uint32(len(strBytes)))
-		e.buf = append(e.buf, strBytes...)
+		e.buf = binary.LittleEndian.AppendUint32(e.buf, uint32(len(strBytes))) //4 bytes length prefix, little-endian
+		e.buf = append(e.buf, strBytes...)                                     //Strings are just a sequence of bytes that must be preserved as-is
 
 	case Data:
-		e.buf = append(e.buf, byte(TypeArray))
-		e.buf = binary.LittleEndian.AppendUint32(e.buf, uint32(len(v)))
+		e.buf = append(e.buf, byte(TypeArray))                          //Single byte type, order not an issue
+		e.buf = binary.LittleEndian.AppendUint32(e.buf, uint32(len(v))) //Guaranteed 4 bytes, little-endian
 		for _, item := range v {
 			e.encodeValue(item)
 		}
 
 	case []interface{}:
 		// Handle native Go slice
-		e.buf = append(e.buf, byte(TypeArray))
-		e.buf = binary.LittleEndian.AppendUint32(e.buf, uint32(len(v)))
+		e.buf = append(e.buf, byte(TypeArray))                          //As above, single byte type doesn't require endianness
+		e.buf = binary.LittleEndian.AppendUint32(e.buf, uint32(len(v))) //Guaranteed 4 bytes, little-endian
 		for _, item := range v {
 			e.encodeValue(item)
 		}
@@ -119,6 +128,7 @@ func (d *Decoder) Decode() (Data, error) {
 		return nil, err
 	}
 
+	//Can value be cast to Data?
 	if arr, ok := value.(Data); ok {
 		return arr, nil
 	}
